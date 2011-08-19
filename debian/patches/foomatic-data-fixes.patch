@@ -1,0 +1,31 @@
+--- a/driver/ptouch.xml
++++ b/driver/ptouch.xml
+@@ -24,7 +24,16 @@
+  <url></url>
+  <execution>
+   <filter />
+-  <prototype>gs -q -dBATCH -dPARANOIDSAFER -dQUIET -dNOPAUSE -sDEVICE=cups %A%Z -sOutputFile=- - | rastertoptch dummyjob dummyuser dummytitle 1 '%B'</prototype>
++  <prototype>gs -q -dBATCH -dPARANOIDSAFER -dQUIET -dNOPAUSE -dNOINTERPOLATE -sDEVICE=cups %A%Z -sOutputFile=- - | rastertoptch dummyjob dummyuser dummytitle 1 '%B'</prototype>
++  <margins>
++    <general>
++      <unit>mm</unit>
++      <left>0</left>
++      <right>0</right>
++      <top>0</top>
++      <bottom>0</bottom>
++    </general>
++  </margins>
+  </execution>
+  <comments>
+   <en>
+--- a/printer/Brother-QL-550.xml
++++ b/printer/Brother-QL-550.xml
+@@ -28,7 +28,7 @@
+     <resolution>
+       <dpi>
+         <x>300</x>
+-        <y>300</y>
++        <y>275</y>
+       </dpi>
+     </resolution>
+     <consumables>
