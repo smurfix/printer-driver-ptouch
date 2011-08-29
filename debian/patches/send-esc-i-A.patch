@@ -1,3 +1,8 @@
+Description: The code "ESC i A \001" needs to be sent to the printer so that
+ cutting happens. Thanks to Matthias Urlichs for the patch.
+Bugs-Ubuntu: LP: #635249.
+Author: Till Kamppeter <till.kamppeter@gmail.com>
+Last-Update: 2010-09-13
 diff -ub ptouch-driver-1.3/rastertoptch.c ptouch-driver-1.3.new//rastertoptch.c
 --- ptouch-driver-1.3.orig/rastertoptch.c	2009-02-04 09:47:44.000000000 +0100
 +++ ptouch-driver-1.3/rastertoptch.c	2010-09-12 11:51:21.494421545 +0200

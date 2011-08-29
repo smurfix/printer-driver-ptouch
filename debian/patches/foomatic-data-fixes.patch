@@ -1,3 +1,7 @@
+Description: Fixes for foomatic "compliance". Also add -dNOINTERPOLATE to the
+ gs commandline, that makes it significantly faster.
+Author: Till Kamppeter <till.kamppeter@gmail.com>
+Last-Update: 2011-07-24
 --- a/driver/ptouch.xml
 +++ b/driver/ptouch.xml
 @@ -24,7 +24,16 @@
