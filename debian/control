@@ -1,6 +1,6 @@
 Source: ptouch-driver
-Maintainer: ubuntu-devel-discuss@lists.ubuntu.com
-XSBC-Original-Maintainer: Lars Wirzenius <liw@liw.fi>
+Maintainer: Debian Printing Team <debian-printing@lists.debian.org>
+Uploaders: Didier Raboud <odyx@debian.org>
 Section: text
 Priority: optional
 Standards-Version: 3.8.2
