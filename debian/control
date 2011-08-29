@@ -10,7 +10,7 @@ Homepage: http://www.diku.dk/hjemmesider/ansatte/panic/P-touch/
 
 Package: ptouch-driver
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, ghostscript, ${python:Depends}, xz-utils
+Depends: ${shlibs:Depends}, ${misc:Depends}, ghostscript
 Description: CUPS/Foomatic driver for Brother P-touch label printers
  A driver for CUPS/Foomatic for Brother P-touch label printers.
 
