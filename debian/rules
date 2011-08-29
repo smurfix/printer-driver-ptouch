@@ -3,7 +3,7 @@
 derives_from_ubuntu := $(shell (dpkg-vendor --derives-from Ubuntu && echo "yes") || echo "no")
 
 %:
-	dh --with autoreconf $@
+	dh $@ --with autoreconf --with pyppd
 
 override_dh_auto_clean:
 	dh_auto_clean
@@ -21,9 +21,6 @@ override_dh_auto_install:
 	rm -rf $(CURDIR)/debian/ptouch-driver/usr/share/foomatic
 	mkdir -p $(CURDIR)/debian/ptouch-driver/usr/share/ppd
 	FOOMATICDB=$(CURDIR)/foomatic-db foomatic-compiledb -j 16 -t ppd -d $(CURDIR)/debian/ptouch-driver/usr/share/ppd/ptouch-driver `ls -1 $(CURDIR)/foomatic-db/db/source/driver/*ptouch*.xml | perl -p -e 's:^.*db/source/driver/(\S*)\.xml\s*$$:\1\n:'`
-
-	# Compress the PPD files with pyppd
-	dh_pyppd -pptouch-driver
 
         # Install the ppd updater data file so that CUPS can update the
         # PPDs of the already existing queues after each update of the 
