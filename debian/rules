@@ -38,5 +38,3 @@ ifeq ($(derives_from_ubuntu),yes)
         # Install Apport hook
 	install -D -m 644 debian/local/apport-hook.py $(CURDIR)/debian/ptouch-driver/usr/share/apport/package-hooks/source_ptouch-driver.py
 endif
-
-override_dh_auto_test:
