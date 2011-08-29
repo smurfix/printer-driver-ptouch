@@ -20,5 +20,5 @@ Package: ptouch-driver
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, ghostscript
 Description: CUPS/Foomatic driver for Brother P-touch label printers
- A driver for CUPS/Foomatic for Brother P-touch label printers.
-
+ The ptouch driver is an open source driver for the Brother P-touch label
+ printers, from the QL-* and PT-* series.
