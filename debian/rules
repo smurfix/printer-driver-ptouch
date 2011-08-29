@@ -2,8 +2,15 @@
 
 derives_from_ubuntu := $(shell (dpkg-vendor --derives-from Ubuntu && echo "yes") || echo "no")
 
+ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+	NUMJOBS = $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+else
+	# Faster when testing on modern desktops, 1 task takes less than a full CPU
+	NUMJOBS = 4
+endif
+
 %:
-	dh $@ --with autoreconf --with pyppd
+	dh $@ --with autoreconf --with pyppd --parallel
 
 override_dh_auto_clean:
 	dh_auto_clean
@@ -20,7 +27,7 @@ override_dh_auto_install:
 	cp -r $(CURDIR)/debian/ptouch-driver/usr/share/foomatic/* $(CURDIR)/foomatic-db/
 	rm -rf $(CURDIR)/debian/ptouch-driver/usr/share/foomatic
 	mkdir -p $(CURDIR)/debian/ptouch-driver/usr/share/ppd
-	FOOMATICDB=$(CURDIR)/foomatic-db foomatic-compiledb -j 16 -t ppd -d $(CURDIR)/debian/ptouch-driver/usr/share/ppd/ptouch-driver `ls -1 $(CURDIR)/foomatic-db/db/source/driver/*ptouch*.xml | perl -p -e 's:^.*db/source/driver/(\S*)\.xml\s*$$:\1\n:'`
+	FOOMATICDB=$(CURDIR)/foomatic-db foomatic-compiledb -j $(NUMJOBS) -t ppd -d $(CURDIR)/debian/ptouch-driver/usr/share/ppd/ptouch-driver `ls -1 $(CURDIR)/foomatic-db/db/source/driver/*ptouch*.xml | perl -p -e 's:^.*db/source/driver/(\S*)\.xml\s*$$:\1\n:'`
 
         # Install the ppd updater data file so that CUPS can update the
         # PPDs of the already existing queues after each update of the 
