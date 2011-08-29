@@ -4,7 +4,12 @@ Uploaders: Didier Raboud <odyx@debian.org>
 Section: text
 Priority: optional
 Standards-Version: 3.9.2
-Build-Depends: debhelper (>= 7.3.8), libcups2-dev, libcupsimage2-dev, foomatic-db-engine, foomatic-db (>= 20000101), pyppd (>= 0.4.9-5)
+Build-Depends: debhelper (>= 7.3.8),
+               libcups2-dev,
+               libcupsimage2-dev,
+               foomatic-db-engine,
+               foomatic-db (>= 20000101),
+               pyppd (>= 0.4.9-5)
 Build-Conflicts: foomatic-db-compressed-ppds
 Homepage: http://www.diku.dk/hjemmesider/ansatte/panic/P-touch/
 
