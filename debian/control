@@ -4,7 +4,7 @@ Uploaders: Didier Raboud <odyx@debian.org>
 Section: text
 Priority: optional
 Standards-Version: 3.9.2
-Build-Depends: debhelper (>= 7.3.8),
+Build-Depends: debhelper (>= 8.9.0~),
                dh-autoreconf,
                libcups2-dev,
                libcupsimage2-dev,
