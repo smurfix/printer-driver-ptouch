@@ -3,7 +3,7 @@ Maintainer: Debian Printing Team <debian-printing@lists.debian.org>
 Uploaders: Didier Raboud <odyx@debian.org>
 Section: text
 Priority: optional
-Standards-Version: 3.9.2
+Standards-Version: 3.9.4
 Build-Depends: debhelper (>= 8.9.0~),
                dh-autoreconf,
                libcups2-dev,
