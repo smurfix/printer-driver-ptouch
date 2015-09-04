@@ -297,8 +297,6 @@
 #define IMAGE_HEIGHT_DEFAULT       0
 /** Feed amount default */
 #define FEED_DEFAULT               0
-/** When to perform feed default */
-#define PERFORM_FEED_DEFAULT       CUPS_ADVANCE_NONE
 
 #include <config.h>
 #include <stdio.h>
@@ -432,6 +430,7 @@ typedef struct {
   int label_preamble;   /**< emit ESC i z ...                     */
   bool concat_pages;    /**< remove interlabel margins            */
   unsigned long rle_alloc_max; /**< max bytes used for rle_buffer */
+  bool roll_fed_media;     /**< continuous (not labels) roll media */
 } job_options_t;
 
 /**
@@ -440,12 +439,10 @@ typedef struct {
 typedef struct {
   cups_cut_t cut_media;    /**< cut media mode                     */
   cups_bool_t mirror;      /**< mirror printing                    */
-  bool roll_fed_media;     /**< continuous (not labels) roll media */
   unsigned resolution [2]; /**< horiz & vertical resolution in DPI */
   unsigned page_size [2];  /**< width & height of page in points   */
   unsigned image_height;   /**< height of page image in pixels     */
   unsigned feed;           /**< feed size in points                */
-  cups_adv_t perform_feed; /**< When to feed                       */
 } page_options_t;
 
 /**
@@ -469,12 +466,40 @@ parse_options (int argc, const char* argv []) {
     LABEL_PREAMBLE_DEFAULT,
     CONCAT_PAGES_DEFAULT,
     RLE_ALLOC_MAX_DEFAULT,
+    ROLL_FED_MEDIA_DEFAULT,
   };
   if (argc < 6) return options;
   int num_options = 0;
   cups_option_t* cups_options = NULL;
+  ppd_file_t		*ppd;		/* PPD file */
   num_options
     = cupsParseOptions (argv [5], num_options, &cups_options);
+
+  // Load job options from the PPD file
+  ppd = ppdOpenFile(getenv("PPD"));
+  if (!ppd) {
+    ppd_status_t	status;		/* PPD error */
+    int			linenum;	/* Line number */
+
+    fprintf(stderr, "ERROR: The PPD file could not be opened.");
+
+    status = ppdLastError(&linenum);
+
+    fprintf(stderr, "DEBUG: %s on line %d.\n", ppdErrorString(status), linenum);
+
+    exit(EXIT_FAILURE);
+  }
+  ppdMarkDefaults(ppd);
+  cupsMarkOptions(ppd, num_options, cups_options);
+
+  // Use PPD API to decode RollFedMedia choice
+    ppd_choice_t *choice = ppdFindMarkedChoice(ppd, "RollFedMedia");
+    fprintf(stderr, "DEBUG: Markedchoice for roll fed media is '%s', text '%s'\n", choice->choice, choice->text);
+    options.roll_fed_media /* Default is continuous roll */
+      = (strcasecmp ("Labels", choice->choice) != 0);
+
+
+  // FIXME use PPD API
   const char* cups_option
     = cupsGetOption ("PixelXfer", num_options, cups_options);
   if (cups_option) {
@@ -526,8 +551,12 @@ parse_options (int argc, const char* argv []) {
   OBTAIN_INT_OPTION ("TransferMode", xfer_mode, 0, 255);
   OBTAIN_BOOL_OPTION ("SoftwareMirror", software_mirror);
   OBTAIN_BOOL_OPTION ("LabelPreamble", label_preamble);
-  /* Release memory allocated for CUPS options struct */
+
+  /* Close the PPD file and
+   * Release memory allocated for CUPS options struct */
+  ppdClose(ppd);
   cupsFreeOptions (num_options, cups_options);
+
   return options;
 }
 
@@ -559,20 +588,26 @@ open_input_file (int argc, const char* argv []) {
  * @param page_options  page options to be updated
  */
 void
-update_page_options (cups_page_header_t* header,
+update_page_options (cups_page_header2_t* header,
                      page_options_t* page_options) {
   page_options->cut_media = header->CutMedia;
   page_options->mirror = header->MirrorPrint;
   const char* media_type = header->MediaType;
-  page_options->roll_fed_media /* Default is continuous roll */
-    = (strcasecmp ("Labels", media_type) != 0);
   page_options->resolution [0] = header->HWResolution [0];
   page_options->resolution [1] = header->HWResolution [1];
   page_options->page_size [0] = header->PageSize [0];
   page_options->page_size [1] = header->PageSize [1];
   page_options->image_height = header->cupsHeight;
   page_options->feed = header->AdvanceDistance;
-  page_options->perform_feed = header->AdvanceMedia;
+
+  fprintf(stderr, "DEBUG: ==== PAGE OPTIONS ====\n");
+  fprintf(stderr, "DEBUG: Cut Media = %d\n", header->CutMedia);
+  fprintf(stderr, "DEBUG: Media Type = [%s]\n", header->MediaType);
+  fprintf(stderr, "DEBUG: Resolution = [%d %d]\n", header->HWResolution[0], header->HWResolution[1]);
+  fprintf(stderr, "DEBUG: PageSize = [%d %d]\n", header->PageSize[0], header->PageSize[1]);
+  fprintf(stderr, "DEBUG: ImageHeight (header->cupsHeight) = %d\n", header->cupsHeight);
+  fprintf(stderr, "DEBUG: Advance Distance = %d\n", header->AdvanceDistance);
+  fprintf(stderr, "DEBUG: Advance Media = %d\n", header->AdvanceMedia);
 }
 
 void cancel_job (int signal);
@@ -654,6 +689,13 @@ cancel_job (int signal) {
  */
 void
 emit_job_cmds (job_options_t* job_options) {
+  /* Send 350 bytes of NULL to clear print buffer in case an error occurred
+   * previously. The printer ignores 0x00 bytes if it's waiting for a command.
+   */
+  int i;
+  for (i=0; i<350; i++) {
+    putchar(0x00);
+  }
   /* Initialise printer */
   putchar (ESC); putchar ('@');
   /* Emit print density selection command if required */
@@ -685,7 +727,8 @@ emit_job_cmds (job_options_t* job_options) {
 inline void
 emit_feed_cut_mirror (bool do_feed, unsigned feed,
                       bool do_cut,
-                      bool do_mirror) {
+                      bool do_mirror,
+                      xfer_t xfer_mode) {
   /* Determine feed nibble */
   unsigned feed_nibble;
   if (do_feed) {
@@ -698,6 +741,14 @@ emit_feed_cut_mirror (bool do_feed, unsigned feed,
   /* Determine mirror print bit*/
   unsigned char mirror_bit = do_mirror ? 0x80 : 0x00;
   /* Combine & emit printer command code */
+  if (xfer_mode == ULP) {
+    /* ESC i A is Enable Cutter -- used for QL-560 only, according to
+     * <http://www.undocprint.org/formats/page_description_languages/brother_p-touch>
+     * The QL-560 (actually the whole QL series) uses ULP mode, so we check for that.
+     * The PT2450DX uses RLE and throw an INTERFACE ERROR if it sees this command.
+     */
+    putchar (ESC); putchar ('i'); putchar ('A'); putchar ((char) (do_cut ? 0x01 : 0x00));
+  }
   putchar (ESC); putchar ('i'); putchar ('M');
   putchar ((char) (feed & 0x1f) | auto_cut_bit | mirror_bit);
 }
@@ -714,11 +765,19 @@ emit_quality_rollfed_size (job_options_t* job_options,
                            page_options_t* page_options,
                            unsigned page_size_y,
                            unsigned image_height_px) {
-  bool roll_fed_media = page_options->roll_fed_media;
+
+  static bool first_page = true;  // True if this is the first page
+                                  // (this function is only called once per page)
+
+  const unsigned char PI_KIND = 0x02;   // Paper type (roll fed media bit) is valid
+  const unsigned char PI_WIDTH = 0x04;  // Paper width is valid
+  const unsigned char PI_LENGTH = 0x08; // Paper length is valid
+
+  bool roll_fed_media = job_options->roll_fed_media;
   /* Determine print quality bit */
   unsigned char print_quality_bit
     = (job_options->print_quality_high == CUPS_TRUE) ? 0x40 : 0x00;
-  unsigned char roll_fed_media_bit = roll_fed_media ? 0x00 : 0x01;
+  unsigned char paper_type_id = roll_fed_media ? 0x0A : 0x0B;
   /* Get tape width in mm */
   int tape_width_mm = lrint (page_options->page_size [0] * MM_PER_PT);
   if (tape_width_mm > 0xff) {
@@ -741,11 +800,28 @@ emit_quality_rollfed_size (job_options_t* job_options,
   }
   /* Combine & emit printer command code */
   putchar (ESC); putchar ('i'); putchar ('z');
-  putchar (print_quality_bit); putchar (roll_fed_media_bit);
-  putchar (tape_width_mm & 0xff); putchar (tape_height_mm & 0xff);
+  putchar (print_quality_bit | PI_KIND | PI_WIDTH | PI_LENGTH);
+  putchar (paper_type_id);
+  putchar (tape_width_mm & 0xff);
+  putchar (tape_height_mm & 0xff);
   putchar (image_height_px & 0xff);
   putchar ((image_height_px >> 8) & 0xff);
-  putchar (0x00); putchar (0x00); putchar (0x00); putchar (0x00);
+  putchar ((image_height_px >> 16) & 0xff);
+  putchar ((image_height_px >> 24) & 0xff);
+  putchar (first_page ? 0x00 : 0x01);   // n9: 0 for first page, 1 for other pages
+  putchar (0x00);   // n10, always 0
+
+  first_page = false;
+
+  /* Send a SET MARGIN command */
+  putchar(ESC); putchar('i'); putchar('d');
+  if (roll_fed_media) {
+    /* Continuous tape, specify 35 dots (3mm) */
+    putchar(35); putchar(0);
+  } else {
+    /* Die-cut labels, specify no margin */
+    putchar(0); putchar(0);
+  }
 }
 /**
  * Emit printer command codes at start of page for options that have
@@ -795,31 +871,20 @@ emit_page_cmds (job_options_t* job_options,
 
   /* Set feed, auto cut and mirror print */
   unsigned feed = new_page_options->feed;
-  cups_adv_t perform_feed = new_page_options->perform_feed;
   cups_cut_t cut_media = new_page_options->cut_media;
   cups_bool_t mirror = new_page_options->mirror;
   if (force
       || feed != old_page_options->feed
-      || perform_feed != old_page_options->perform_feed
       || cut_media != old_page_options->cut_media
       || mirror != old_page_options->mirror)
     /* We only know how to feed after each page */
-    emit_feed_cut_mirror (perform_feed == CUPS_ADVANCE_PAGE, feed,
+    emit_feed_cut_mirror (false, feed,
                           cut_media == CUPS_CUT_PAGE,
-                          mirror == CUPS_TRUE);
-  /* Set media and quality if label preamble is requested */
+                          mirror == CUPS_TRUE,
+                          job_options->pixel_xfer);
+
   unsigned page_size_y = new_page_options->page_size [1];
   unsigned image_height_px = lrint (page_size_y * vres / 72.0);
-  if (job_options->label_preamble && !job_options->concat_pages
-      && (force
-          || (new_page_options->roll_fed_media
-              != old_page_options->roll_fed_media)
-          || new_page_size_x != old_page_size_x
-          || page_size_y != old_page_options->page_size [1]))
-    emit_quality_rollfed_size (job_options, new_page_options,
-                               page_size_y, image_height_px);
-
-  /* WHY DON'T WE SET MARGIN (ESC i d ...)? */
 
   /* Set pixel data transfer compression */
   if (force) {
@@ -907,7 +972,7 @@ generate_emit_line (unsigned char* in_buffer,
 #ifdef DEBUG
   if (debug)
     fprintf (stderr, "DEBUG: generate_emit_line "
-             "(in_buffer=%0x, out_buffer=%0x, "
+             "(in_buffer=%p, out_buffer=%p, "
              "buflen=%d, bytes_per_line=%d, right_padding_bytes=%d, "
              "shift=%d, do_mirror=%d, xormask=%0x)\n",
              in_buffer, out_buffer, buflen, bytes_per_line,
@@ -1068,7 +1133,7 @@ ensure_rle_buf_space (job_options_t* job_options,
 #ifdef DEBUG
   if (debug)
     fprintf (stderr, "DEBUG: ensure_rle_buf_space (bytes=%d): "
-             "increasing rle_buffer from %d to %d\n",
+             "increasing rle_buffer from %zu to %zu\n",
              bytes,
              rle_alloced * sizeof (char),
              new_alloced * sizeof (char));
@@ -1291,7 +1356,7 @@ emit_raster_lines (int page,
                    job_options_t* job_options,
                    page_options_t* page_options,
                    cups_raster_t* ras,
-                   cups_page_header_t* header) {
+                   cups_page_header2_t* header) {
   unsigned char xormask = (header->NegativePrint ? ~0 : 0);
   /* Determine whether we need to mirror the pixel data */
   int do_mirror = job_options->software_mirror && page_options->mirror;
@@ -1362,8 +1427,10 @@ emit_raster_lines (int page,
     unsigned top_distance_pt
       = page_size_y - header->ImagingBoundingBox [3];
     if (top_distance_pt != 0) {
+      fprintf(stderr, "DEBUG: philpem -- Top distance pt nonzero, %d\n", top_distance_pt);
       top_empty_lines = lrint (top_distance_pt * scale_pt2ypixels);
-      empty_lines += top_empty_lines;
+      fprintf(stderr, "DEBUG: philpem -- Top empty lines %d\n", top_empty_lines);
+      //empty_lines += top_empty_lines;
     }
   }
   /* Generate and store actual page data */
@@ -1404,6 +1471,11 @@ emit_raster_lines (int page,
     bot_empty_lines = image_height_px - top_empty_lines - y;
   else
     bot_empty_lines = 0;
+
+
+  fprintf(stderr, "DEBUG: philpem -- Bottom empty lines %d\n", bot_empty_lines);
+  bot_empty_lines = 0;
+
   if (bot_empty_lines != 0 && !job_options->concat_pages)
     empty_lines += bot_empty_lines;
   fprintf (stderr,
@@ -1423,19 +1495,17 @@ int
 process_rasterdata (int fd, job_options_t* job_options) {
   int page = 1;                    /* Page number                   */
   cups_raster_t* ras;              /* Raster stream for printing    */
-  cups_page_header_t header;       /* Current page header           */
+  cups_page_header2_t header;       /* Current page header           */
   int first_page = true;           /* Is this the first page?       */
   int more_pages;                  /* Are there more pages left?    */
   int bytes_per_line = job_options->bytes_per_line;
   page_options_t page_options [2] = {{
     CUT_MEDIA_DEFAULT,
     MIRROR_DEFAULT,
-    ROLL_FED_MEDIA_DEFAULT,
     RESOLUTION_DEFAULT,
     PAGE_SIZE_DEFAULT,
     IMAGE_HEIGHT_DEFAULT,
-    FEED_DEFAULT,
-    PERFORM_FEED_DEFAULT,}
+    FEED_DEFAULT,}
   };                               /* Current & preceding page opts */
   page_options_t* new_page_options
     = page_options + 0;            /* Options for current page      */
@@ -1443,7 +1513,7 @@ process_rasterdata (int fd, job_options_t* job_options) {
     = page_options + 1;            /* Options for preceding page    */
   page_options_t* tmp_page_options;/* Temp variable for swapping    */
   ras = cupsRasterOpen (fd, CUPS_RASTER_READ);
-  for (more_pages = cupsRasterReadHeader (ras, &header);
+  for (more_pages = cupsRasterReadHeader2 (ras, &header);
        more_pages;
        tmp_page_options = old_page_options,
          old_page_options = new_page_options,
@@ -1452,6 +1522,7 @@ process_rasterdata (int fd, job_options_t* job_options) {
     update_page_options (&header, new_page_options);
 #ifdef DEBUG
     if (debug) {
+      fprintf (stderr, "DEBUG: MediaType = %s\n", header.MediaType);
       fprintf (stderr, "DEBUG: pixel_xfer = %d\n", job_options->pixel_xfer);
       fprintf (stderr, "DEBUG: print_quality_high = %d\n", job_options->print_quality_high);
       fprintf (stderr, "DEBUG: half_cut = %d\n", job_options->half_cut);
@@ -1464,12 +1535,11 @@ process_rasterdata (int fd, job_options_t* job_options) {
       fprintf (stderr, "DEBUG: concat_pages = %d\n", job_options->concat_pages);
       fprintf (stderr, "DEBUG: cut_media = %d\n", new_page_options->cut_media);
       fprintf (stderr, "DEBUG: mirror = %d\n", new_page_options->mirror);
-      fprintf (stderr, "DEBUG: roll_fed_media = %d\n", new_page_options->roll_fed_media);
+      fprintf (stderr, "DEBUG: roll_fed_media = %d\n", job_options->roll_fed_media);
       fprintf (stderr, "DEBUG: resolution = %d x %d\n", new_page_options->resolution [0], new_page_options->resolution [1]);
       fprintf (stderr, "DEBUG: page_size = %d x %d\n", new_page_options->page_size [0], new_page_options->page_size [1]);
       fprintf (stderr, "DEBUG: image_height = %d\n", new_page_options->image_height);
       fprintf (stderr, "DEBUG: feed = %d\n", new_page_options->feed);
-      fprintf (stderr, "DEBUG: perform_feed = %d\n", new_page_options->perform_feed);
       fprintf (stderr, "DEBUG: header->ImagingBoundingBox = [%u, %u, %u, %u]\n",
                header.ImagingBoundingBox [0], header.ImagingBoundingBox [1],
                header.ImagingBoundingBox [2], header.ImagingBoundingBox [3]);
@@ -1486,19 +1556,15 @@ process_rasterdata (int fd, job_options_t* job_options) {
     emit_raster_lines (page, job_options, new_page_options, ras, &header);
     unsigned char xormask = (header.NegativePrint ? ~0 : 0);
     /* Determine whether this is the last page (fetch next)    */
-    more_pages = cupsRasterReadHeader (ras, &header);
+    more_pages = cupsRasterReadHeader2 (ras, &header);
     /* Do feeding or ejecting at the end of each page. */
-    cups_adv_t perform_feed = new_page_options->perform_feed;
     if (more_pages) {
       if (!job_options->concat_pages) {
         RLE_store_empty_lines
           (job_options, page_options, empty_lines, xormask);
         empty_lines = 0;
         flush_rle_buffer (job_options, page_options);
-        if (perform_feed == CUPS_ADVANCE_PAGE)
-          putchar (PTC_EJECT);    /* Emit eject marker to force feed   */
-        else
-          putchar (PTC_FORMFEED); /* Emit page end marker without feed */
+        putchar (PTC_FORMFEED); /* Emit page end marker without feed */
       }
     } else {
       if (!job_options->concat_pages) {
@@ -1506,7 +1572,6 @@ process_rasterdata (int fd, job_options_t* job_options) {
           (job_options, page_options, empty_lines, xormask);
         empty_lines = 0;
         flush_rle_buffer (job_options, page_options);
-        putchar (PTC_FORMFEED);
       } else {
         double scale_pt2ypixels = header.HWResolution [1] / 72.0;
         unsigned bot_empty_lines
@@ -1518,18 +1583,8 @@ process_rasterdata (int fd, job_options_t* job_options) {
         flush_rle_buffer (job_options, page_options);
       }
 
-      /* If special feed or cut at job end, emit commands to that effect */
-      cups_cut_t cut_media = new_page_options->cut_media;
-      if (perform_feed == CUPS_ADVANCE_JOB || cut_media == CUPS_CUT_JOB) {
-        emit_feed_cut_mirror
-          (perform_feed == CUPS_ADVANCE_PAGE ||
-           perform_feed == CUPS_ADVANCE_JOB,
-           new_page_options->feed,
-           cut_media == CUPS_CUT_PAGE || cut_media == CUPS_CUT_JOB,
-           new_page_options->mirror == CUPS_TRUE);
-        /* Emit eject marker */
-        putchar (PTC_EJECT);
-      }
+      /* End of last page, send Eject command */
+      putchar (PTC_EJECT);
     }
     page_end ();
     /* Emit page count according to CUPS requirements */
