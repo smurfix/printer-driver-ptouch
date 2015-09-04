@@ -12,7 +12,7 @@ Build-Depends: debhelper (>= 9),
                pyppd (>= 1.0.1)
 Vcs-Git: https://alioth.debian.org/anonscm/git/printing/ptouch-driver.git
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=printing/ptouch-driver.git
-Homepage: http://www.diku.dk/hjemmesider/ansatte/panic/P-touch/
+Homepage: https://bitbucket.org/philpem/printer-driver-ptouch
 
 Package: printer-driver-ptouch
 Architecture: any
