@@ -1,3 +1,19 @@
+ptouch-driver (1.3+20150410-hg15aad40+cleanup0-1) unstable; urgency=low
+
+  * Snapshot from the new upstream take-over repository, by Philip Pemberton
+   - Fix the "ESC i A" (enable cutter) command patch to correctly send only on
+     printers which support it (LP: #1342979)
+  * Drop all patches, included upstream
+  * Drop the transitional ptouch-driver package
+  * Bump to Standards-Version 3.9.6 without changes needed
+  * Bump debhelper B-D to 9
+  * Refresh debian/copyright
+  * Update homepage to point to the new upstream's
+  * Add gbp.conf
+  * Drop debian/watch for now
+
+ -- Didier Raboud <odyx@debian.org>  Fri, 04 Sep 2015 09:46:47 +0200
+
 ptouch-driver (1.3-8) unstable; urgency=medium
 
   [ Philip Pemberton ]
