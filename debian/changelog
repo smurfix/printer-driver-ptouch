@@ -1,3 +1,10 @@
+ptouch-driver (1.4-5-gf4ad445-1) unstable; urgency=medium
+
+  * New upstream snapshot
+    - Add support for Brother QL-570 (LP: #1604036)
+
+ -- Didier Raboud <odyx@debian.org>  Thu, 21 Jul 2016 07:38:59 +0200
+
 ptouch-driver (1.4-1) unstable; urgency=medium
 
   * New 1.4 upstream release, functionally equivalent to the previously
