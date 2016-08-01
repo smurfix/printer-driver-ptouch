@@ -1,3 +1,12 @@
+ptouch-driver (1.4.2-1) unstable; urgency=medium
+
+  * New 1.4.2 upstream release (LP: #1607917)
+    - Fix RLE internal errors
+    - Fix behaviour of Cut After Job option
+  * Bump S-V to 3.9.8 without changes needed
+
+ -- Didier Raboud <odyx@debian.org>  Mon, 01 Aug 2016 10:52:23 +0200
+
 ptouch-driver (1.4.1-1) unstable; urgency=medium
 
   * New 1.4.1 upstream release, functionally equivalent to the previously
