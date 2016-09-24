@@ -1,3 +1,11 @@
+ptouch-driver (1.4.2-2) unstable; urgency=medium
+
+  * Initialize git-dpm
+  * Add patch to add 'include <cups/ppd.h>' as CUPS 2.2 moved some definitions
+    to ppd.h, to fix FTBFS
+
+ -- Didier Raboud <odyx@debian.org>  Sat, 24 Sep 2016 19:05:20 +0200
+
 ptouch-driver (1.4.2-1) unstable; urgency=medium
 
   * New 1.4.2 upstream release (LP: #1607917)
