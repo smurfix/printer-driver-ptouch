@@ -313,6 +313,7 @@
 #include <cups/ppd.h>
 #include <cups/raster.h>
 #include <cups/cups.h>
+#include <cups/ppd.h>
 
 #if STDC_HEADERS
 # include <string.h>
